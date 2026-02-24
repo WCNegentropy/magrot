@@ -11,7 +11,7 @@ than raw magnitudes or current densities.
 | R = 1 | **Equilibrium** | Curvature-driven tension balances pressure |
 | R > 1 | **Contracting** | Inward tension dominates; field collapses |
 
-**Author:** Mikeal Clark / WCNEGENTROPY HOLDINGS LLC
+**Author:** WCNEGENTROPY HOLDINGS LLC
 **License:** MIT
 **Version:** 0.2.0-dev
 **Status:** Active R&D -- v1 validated (Tier 1 & 2), v2 thermodynamic modules implemented
