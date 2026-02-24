@@ -13,7 +13,8 @@ than raw magnitudes or current densities.
 
 **Author:** Mikeal Clark / WCNEGENTROPY HOLDINGS LLC
 **License:** MIT
-**Status:** Active R&D -- validated through Tier 1 & 2 test cases
+**Version:** 0.2.0-dev
+**Status:** Active R&D -- v1 validated (Tier 1 & 2), v2 thermodynamic modules implemented
 
 ---
 
@@ -60,9 +61,20 @@ magrot/
 │   ├── rotation/
 │   │   ├── metrics.py          # All 4 R definitions
 │   │   └── normalize.py        # Convention toggle
-│   ├── dynamics/
+│   ├── thermodynamics/         # v2: Entropy-based state flow
+│   │   ├── free_energy.py      # F[B, p] functional computation
+│   │   ├── entropy.py          # Local entropy production rate s_dot(x)
+│   │   ├── constraints.py      # Helicity K, flux Phi, mass M conservation
+│   │   ├── diagnostics.py      # F(sigma) tracking, Lyapunov verification
+│   │   └── state_flow.py       # Variational relaxation engine
+│   ├── stability/              # v2: Entropic hypothesis tests
+│   │   ├── hessian.py          # Multi-axis perturbation -> Hessian eigenvalues
+│   │   ├── entropy_audit.py    # Entropy production at equilibrium
+│   │   ├── manifold.py         # Constraint boundary mapping
+│   │   └── attractors.py       # Basin-of-attraction characterization
+│   ├── dynamics/               # v1 legacy time-based models
 │   │   ├── mhd_1d.py           # 1D Z-pinch thin-shell model
-│   │   ├── em_wave.py          # EM wave mode (Phase 2)
+│   │   ├── em_wave.py          # EM wave mode
 │   │   └── evolve.py           # Time-stepper interface
 │   ├── viz/
 │   │   ├── fields_2d.py        # 2D cross-section plots
@@ -79,7 +91,9 @@ magrot/
 │       ├── test_geometry.py
 │       ├── test_stress.py
 │       ├── test_rotation.py
-│       └── test_validation.py
+│       ├── test_validation.py
+│       ├── test_thermodynamics.py  # v2: Entropy & free energy tests
+│       └── test_stability.py       # v2: Stability analysis tests
 ├── simulations/                # Standalone simulation scripts
 │   ├── magrot_sim_v1.py        # Original MVP (all tests)
 │   ├── magrot_sim_v2.py        # Fixed dynamics + analysis
@@ -97,7 +111,7 @@ magrot/
 │   ├── MagRot_Validation_Report_v3.docx
 │   ├── MagRot_Tokamak_Validation_Report_v1.docx
 │   └── MagRot_Tokamak_Validation_Report_v1.pdf
-├── MAGROT_Framework_Spec.md    # Framework spec (root copy)
+├── MAGROT_v2_Plan.md           # v2 development roadmap
 ├── pyproject.toml
 └── README.md
 ```
@@ -171,9 +185,33 @@ python simulations/earth_dipole.py       # Earth dipole analysis
 python simulations/magrot_tokamak.py     # Tokamak equilibrium
 ```
 
+## v2: Thermodynamic State Flow
+
+Version 2 replaces the v1 time-based dynamics paradigm with entropy-parameterized
+state evolution. The evolution parameter is entropy produced (sigma), not elapsed
+time (t), yielding guaranteed convergence via the second law and physical
+interpretation at every step.
+
+Key additions:
+
+- **Free energy functional** F[B, p] and its connection to R (|R - 1| maps
+  local free energy density)
+- **Entropy production** s_dot(x) = eta|J|^2/T with Spitzer resistivity
+- **Constraint conservation** -- magnetic helicity K, flux Phi, mass M
+- **Variational relaxation** engine with steepest descent, L-BFGS, and
+  Onsager linear response schemes
+- **Entropic hypothesis tests** (Tests A--D) to determine whether R = 1 is a
+  conditional entropy maximum, a negentropic state, or a saddle point
+
+See `MAGROT_v2_Plan.md` for the full development plan and scientific rationale.
+
 ## Future Directions
 
+- **Entropic identity resolution:** Finalize whether R = 1 is a conditional
+  entropy maximum on the constrained MHD manifold ("valley on a mesa") or
+  something else, based on Tests A--D results
+- **Tokamak refinements:** q0 tuning, X-point geometry, beta limit as
+  thermodynamic transition, disruption precursor identification via R + s_dot
 - **Geometric Algebra:** Unify static/dynamic R via Faraday bivector F = E + IcB
 - **Fusion control:** Real-time R computation as feedback for Z-pinch experiments
 - **Topological extension:** Combine local R with magnetic winding metrics
-- **Phase 2:** Time-dependent EM wave mode, full FDTD integration

@@ -2,10 +2,10 @@
 
 ## Framework Specification & Simulator Blueprint
 
-**Version:** 0.1.0-draft
+**Version:** 0.2.0-dev
 **Author:** Mikeal Clark / WCNEGENTROPY HOLDINGS LLC
 **License:** MIT
-**Status:** Pre-implementation specification
+**Status:** v1 implemented & validated; v2 thermodynamic modules implemented
 
 ---
 
@@ -159,6 +159,38 @@ This means:
 
 The virial theorem doesn't prevent **local** ℛ = 1 surfaces or regions — it constrains the volume integral. The simulator should compute both local ℛ(x) maps and volume-integrated ⟨ℛ⟩ to check consistency with virial constraints.
 
+### 2.6 Thermodynamic Identity of ℛ (v2)
+
+v1 asserted that "ℛ = 1 represents the negentropic state: maximum organization where inward and outward forces achieve local balance." v2 treats this as a hypothesis to be tested empirically via Tests A–D (see `MAGROT_v2_Plan.md` §3).
+
+**Provisional formulation (pending Test A–D results):**
+
+> ℛ = 1 is the **conditional entropy maximum** on the constrained MHD equilibrium manifold — the state toward which dissipative relaxation drives the system given conservation of magnetic helicity and total flux. The equilibrium manifold itself represents a negentropic configuration requiring external energy throughput to maintain. The framework therefore measures two distinct things: (1) how far the system is from optimal self-organization within its accessible state space (|ℛ - 1|), and (2) implicitly, the proximity to the boundary of the accessible state space beyond which the system undergoes irreversible reconfiguration (disruption).
+
+**Key insight:** Replacing clock time *t* with entropy production σ as the evolution parameter transforms ℛ from a diagnostic into the **driving function** of the evolution itself, since |ℛ - 1| is proportional to the local free energy density gradient.
+
+### 2.7 Free Energy Functional (v2)
+
+$$F[B, p] = \int_V \left[ \frac{B^2}{2\mu_0} + \frac{p}{\gamma - 1} \right] dV - F_{\text{eq}}[K, \Phi, M]$$
+
+where F_eq is the minimum-energy state satisfying the constraints:
+- K = ∫ A·B dV (magnetic helicity, conserved in ideal MHD)
+- Φ = ∫ B·dA (magnetic flux through boundary, conserved for ideal conductor)
+- M = ∫ ρ dV (total mass, conserved)
+
+F ≥ 0 always. F = 0 at equilibrium.
+
+**ℛ–F connection:**
+
+$$|\mathcal{R}(\mathbf{x}) - 1| \propto \frac{|\delta F / \delta B(\mathbf{x})|}{B^2 / 2\mu_0}$$
+
+This makes ℛ the *dimensionless local gradient of the free energy functional*, measured in units of the local magnetic energy density. Where ℛ ≠ 1, there exists local free energy available for conversion to heat (entropy production).
+
+**Evolution principle:**
+- δF/δσ ≤ 0 (second law — guaranteed monotonic decrease)
+- Near equilibrium: Onsager minimum entropy production → smooth relaxation toward ℛ = 1
+- Far from equilibrium: maximum entropy production → rapid reconfiguration (disruption analog)
+
 ---
 
 ## 3. Simulator Architecture
@@ -168,24 +200,38 @@ The virial theorem doesn't prevent **local** ℛ = 1 surfaces or regions — it 
 ```
 magrot/
 ├── __init__.py
+├── numerics.py              # 4th-order finite difference utilities
 ├── fields/
 │   ├── __init__.py
-│   ├── analytic.py          # Analytic field generators
-│   ├── grid.py              # Grid representations (Cartesian, cylindrical)
+│   ├── analytic.py          # Analytic field generators (wire, Z-pinch, θ-pinch, dipole)
+│   ├── grid.py              # CylindricalGrid and toroidal grid classes
 │   └── io.py                # Import/export field data
 ├── geometry/
 │   ├── __init__.py
 │   ├── fieldlines.py        # Field-line tracing (adaptive RK45)
-│   └── curvature.py         # Frenet-Serret: tangent, normal, κ, τ
+│   └── curvature.py         # κ = (b · ∇)b (local curvature)
 ├── stress/
 │   ├── __init__.py
-│   ├── maxwell.py           # Maxwell stress tensor + divergence
-│   └── decompose.py         # Tension/pressure decomposition
+│   ├── maxwell.py           # Conservative J × B force computation
+│   └── decompose.py         # Tension/pressure separation
 ├── rotation/
 │   ├── __init__.py
 │   ├── metrics.py           # All ℛ definitions (A, B, C, universal)
 │   └── normalize.py         # Normalization schemes + convention toggle
-├── dynamics/
+├── thermodynamics/          # v2: Entropy-based state flow
+│   ├── __init__.py
+│   ├── free_energy.py       # F[B, p] functional computation
+│   ├── entropy.py           # Local entropy production rate ṡ(x)
+│   ├── constraints.py       # Helicity K, flux Φ, mass M conservation
+│   ├── diagnostics.py       # F(σ) tracking, Lyapunov verification
+│   └── state_flow.py        # Variational relaxation engine
+├── stability/               # v2: Entropic hypothesis tests
+│   ├── __init__.py
+│   ├── hessian.py           # Multi-axis perturbation → Hessian eigenvalues (Test A)
+│   ├── entropy_audit.py     # Entropy production accounting at equilibrium (Test B)
+│   ├── manifold.py          # Constraint boundary mapping (Test C)
+│   └── attractors.py        # Basin-of-attraction characterization
+├── dynamics/                # v1 legacy (time-based, kept for comparison)
 │   ├── __init__.py
 │   ├── mhd_1d.py            # 1D radial MHD toy model
 │   ├── em_wave.py           # Time-dependent EM wave mode
@@ -207,7 +253,9 @@ magrot/
     ├── test_geometry.py
     ├── test_stress.py
     ├── test_rotation.py
-    └── test_validation.py
+    ├── test_validation.py
+    ├── test_thermodynamics.py   # v2: Entropy & free energy tests
+    └── test_stability.py        # v2: Stability analysis tests
 ```
 
 ### 3.2 Technology Stack
@@ -379,31 +427,51 @@ These don't have predetermined correct answers — they generate data for framew
 
 **Deliverable:** Jupyter notebook showing ℛ profiles for Z-pinch, θ-pinch, and wire, with all four metrics compared side-by-side.
 
-### Phase 2: Dynamic Extension (Weeks 3-5)
+### Phase 2: Thermodynamic State Flow (replaces "Dynamic Extension")
 
-**Goal:** Add time dependence and simple evolution.
+**Goal:** Implement entropy-parameterized state evolution and resolve the thermodynamic identity of ℛ = 1. This replaces the v1 plan for time-dependent MHD with a thermodynamically grounded approach that uses entropy production (σ) rather than elapsed time (t) as the evolution parameter.
 
-1. Implement `dynamics.mhd_1d`: 1D radial MHD for Z-pinch evolution.
-2. Implement `dynamics.em_wave`: plane wave and pulse propagation (FDTD or analytic).
-3. Implement `rotation.metrics` dynamic mode (E field included).
-4. Run Tier 1 test 1.4 (plane wave).
-5. Run time-evolving Z-pinch: track ℛ(r, t) during compression/expansion.
+**Phase 2A — Thermodynamic Foundation (implemented):**
+1. `thermodynamics/free_energy.py` — F[B, p] functional computation
+2. `thermodynamics/entropy.py` — ṡ(x) = η|J|²/T with Spitzer resistivity
+3. `thermodynamics/constraints.py` — Helicity K, flux Φ, mass M conservation
+4. `thermodynamics/diagnostics.py` — F(σ) tracking, monotonicity verification, Lyapunov exponents
 
-**Deliverable:** Animated ℛ evolution for compressing Z-pinch + static plane wave verification.
+**Phase 2B — Entropic Identity Resolution (implemented):**
+1. `stability/hessian.py` — Multi-axis perturbation → Hessian eigenvalues (Test A)
+2. `stability/entropy_audit.py` — Entropy production at ℛ ≈ 1 (Test B)
+3. `stability/manifold.py` — Constraint boundary mapping (Test C)
+4. `stability/attractors.py` — Basin-of-attraction characterization
 
-### Phase 3: Cross-Validation (Weeks 5-7)
+**Phase 2C — State Flow Engine (implemented):**
+1. `thermodynamics/state_flow.py` — Variational relaxation engine with steepest descent, L-BFGS, and Onsager linear response schemes
+2. Constraint enforcement via Lagrange multipliers
+
+**Phase 2D — Tokamak Applications (pending):**
+1. Tokamak refinements: q₀ tuning, X-point geometry (Cerfon-Freidberg), axis regularization
+2. Disruption as manifold boundary crossing
+3. β limit as thermodynamic transition (F(β) sign change)
+
+**Phase 2E — Inherited v1 Priorities (pending, independent):**
+1. Suydam criterion overlay on screw-pinch sweep
+2. Radiation belt boundary comparison for dipole ℛ = 1 surface
+3. R★ normalization for misalignment metric
+4. Dynamic EM extension — R_dyn plane wave verification
+
+See `MAGROT_v2_Plan.md` for the full specification, test protocols, and dependency graph.
+
+### Phase 3: Cross-Validation
 
 **Goal:** Compare ℛ against external benchmarks.
 
-1. Implement `validation.bennett`: Bennett equilibrium reconstruction.
-2. Run Tier 2 tests (2.1, 2.2).
-3. Implement field-line tracing + 3D visualization.
-4. Run Tier 3 exploratory cases.
-5. Document results: what works, what doesn't, where metrics disagree.
+**Status:** Partially complete (v1 validation campaign covered Bennett, tokamak, earth dipole).
 
-**Deliverable:** Validation report with plots comparing ℛ predictions to known equilibria and stability criteria.
+Remaining:
+1. Suydam criterion correlation with screw-pinch sweep
+2. Optical soliton ℛ = 1 verification (stretch goal)
+3. Experimental data comparison (ITER, JET, DIII-D — deferred to v3+)
 
-### Phase 4: Package and Release (Week 7-8)
+### Phase 4: Package and Release
 
 **Goal:** Clean up for open-source release.
 
@@ -415,21 +483,37 @@ These don't have predetermined correct answers — they generate data for framew
 
 ---
 
-## 6. Open Questions for Testing
+## 6. Open Questions
 
-These are hypotheses the simulator is designed to answer:
+### 6.1 Resolved by v1
 
-1. **Universality:** Does the force-ratio ℛ_universal work across all test geometries without per-problem tuning, or do some geometries require geometry-specific metrics?
+| # | Question | Resolution |
+|---|----------|------------|
+| 1 | Does ℛ_universal work across all geometries without tuning? | **YES** — validated across 8 geometries, though noisiest at edges |
+| 2 | Do all four metrics agree? | **PARTIALLY** — they rank consistently (ℛ_κ > ℛ_C > \|R\| > ℛ_u) but measure different physics |
+| 3 | Does ℛ provide early warning of instability? | **YES** — edge ℛ rises 3× before core moves during tokamak current ramp |
+| 4 | Does ℛ = 1 correspond to known stable equilibria? | **YES** — Bennett, tokamak core, vacuum wire, θ-pinch |
 
-2. **Metric agreement:** Do all four ℛ definitions agree on which regions are collapsing/expanding/stable, or do they diverge? If they diverge, which metric best predicts actual dynamics?
+### 6.2 Open Questions for v2
 
-3. **Early warning:** Does ℛ(x, t) provide earlier signal of instability onset than conventional diagnostics (energy, Suydam criterion, growth rate spectra)?
+| # | Question | Test | Phase |
+|---|----------|------|-------|
+| 5 | Is ℛ = 1 a local minimum (attractor) or saddle point of F? | Test A: Hessian eigenvalues | 2B |
+| 6 | Is entropy being produced at ℛ = 1? (ṡ > 0 or ṡ = 0?) | Test B: Entropy audit | 2A/2B |
+| 7 | What happens when constraints defining ℛ = 1 manifold are violated? | Test C: Unconstrained relaxation | 2B |
+| 8 | Does entropy-parameterized evolution reproduce time-based results? | Test D: State flow convergence | 2C |
+| 9 | Is |ℛ - 1| proportional to local free energy density? | Compute F(x), correlate with ℛ(x) | 2A |
+| 10 | Can ℛ detect the mesa edge (constraint boundary) before disruption? | Phase 2D disruption analysis | 2D |
 
-4. **Soliton mapping:** Does ℛ = 1 in the transverse plane of an optical soliton, validating the framework's extension to nonlinear wave physics?
+### 6.3 Deferred to v3+
 
-5. **Virial consistency:** Does volume-integrated ⟨ℛ⟩ respect the magnetic virial theorem for all test configurations?
-
-6. **Force-free limit:** What happens to ℛ in nearly force-free configurations (solar corona analog)? Does the misalignment metric (C) provide useful information where curvature-based metrics become degenerate?
+- Full 3D toroidal mode structure (n ≠ 0 perturbations)
+- Coupling to transport codes for real-time ℛ feedback control
+- Application to experimental data (ITER, JET, DIII-D)
+- Geometric Algebra formulation (Faraday bivector → spacetime ℛ invariant)
+- Optical soliton ℛ = 1 verification (§4.2 Test 2.3)
+- Virial consistency verification (volume-integrated ⟨ℛ⟩)
+- Force-free limit behavior (solar corona analog)
 
 ---
 
@@ -475,7 +559,13 @@ Magnetic winding (Prior et al., 2020) provides a nonlocal, purely geometric meas
 
 ### 8.4 Negentropy Frame
 
-ℛ = 1 is the negentropic state of a magnetic system — the configuration that resists both entropic dissolution (expansion/dissipation, ℛ < 1) and entropic compression (forced collapse beyond equilibrium, ℛ > 1). The framework provides a quantitative measure of how far a magnetic system is from its self-organized equilibrium, directly paralleling the negentropy concept across domains.
+v1 asserted ℛ = 1 as "the negentropic state." v2 refines this with thermodynamic rigor:
+
+ℛ = 1 is the **conditional entropy maximum** on the constrained MHD equilibrium manifold. Dissipative relaxation (entropy production) drives the system toward ℛ = 1 given conservation of helicity, flux, and mass. The equilibrium manifold itself is negentropic — it requires external energy throughput to maintain against unconstrained relaxation. This "valley on a mesa" model means ℛ = 1 is simultaneously the bottom of a valley (stable within constraints) sitting atop a mesa (negentropic relative to unconstrained state space).
+
+The framework measures: (1) |ℛ - 1| = how far the system is from optimal self-organization within its accessible state space, and (2) implicitly, proximity to the constraint boundary beyond which the system undergoes irreversible reconfiguration (disruption).
+
+*Note: This formulation is provisional pending empirical results from Tests A–D (see §6.2 and `MAGROT_v2_Plan.md` §3). The framework's utility as a diagnostic is independent of the entropic/negentropic conclusion.*
 
 ---
 
