@@ -28,5 +28,9 @@ Thumbs.db
 # Temporary extraction directory
 _unzipped/
 
+# Open-core build output
+magrot_open/
+magrot-core-*.zip
+
 # Original zip files (kept in git history, not needed in working tree)
 *.zip
