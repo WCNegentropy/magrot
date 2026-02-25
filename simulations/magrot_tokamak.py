@@ -17,7 +17,7 @@ Tests:
   5. Current ramp dynamics — disruption early warning
   6. Metric comparison — all 4 ℛ definitions on tokamak
 
-Author: Mikeal Clark / WCNEGENTROPY HOLDINGS LLC
+Author: WCNEGENTROPY HOLDINGS LLC
 Framework: MagRot v3+ (production numerics)
 License: MIT
 """

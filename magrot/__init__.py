@@ -29,7 +29,7 @@ v2 additions:
         manifold         -- Constraint boundary mapping (Test C)
         attractors       -- Basin of attraction characterization
 
-Author: Mikeal Clark / WCNEGENTROPY HOLDINGS LLC
+Author: WCNEGENTROPY HOLDINGS LLC
 License: MIT
 """
 
