@@ -3,7 +3,7 @@
 ## Framework Specification & Simulator Blueprint
 
 **Version:** 0.2.0-dev
-**Author:** Mikeal Clark / WCNEGENTROPY HOLDINGS LLC
+**Author:** WCNEGENTROPY HOLDINGS LLC
 **License:** MIT
 **Status:** v1 implemented & validated; v2 thermodynamic modules implemented
 

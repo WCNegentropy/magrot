@@ -9,7 +9,7 @@ description = "Rotational-Vector Framework for Magnetic Field Dynamics"
 readme = "README.md"
 license = {text = "MIT"}
 authors = [
-    {name = "Mikeal Clark", email = "mikeal@wcnegentropy.com"},
+    {name = "WCNEGENTROPY HOLDINGS LLC"},
 ]
 requires-python = ">=3.10"
 classifiers = [
