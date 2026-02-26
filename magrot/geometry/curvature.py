@@ -13,10 +13,19 @@ from ..fields.grid import CylindricalGrid
 
 
 def compute_curvature_cylindrical(B, grid: CylindricalGrid):
-    """Curvature vector and magnitude for axisymmetric cylindrical fields.
+    """Curvature vector and magnitude for cylindrical fields.
 
-    For purely azimuthal field (B_r=0, B_z=0):
-        kappa_r = -b_theta^2 / r  (centripetal, inward)
+    Computes kappa = (b . nabla) b in full 3D cylindrical coordinates.
+    When the grid has Ntheta > 1 or Nz > 1, theta- and z-advection
+    terms are included; otherwise the axisymmetric shortcut is used.
+
+    The directional derivative in cylindrical coords is::
+
+        (b . nabla) f_i = b_r df_i/dr + (b_theta/r) df_i/dtheta + b_z df_i/dz
+
+    plus geometric terms from the curvilinear basis:
+        kappa_r     += -b_theta^2 / r
+        kappa_theta += b_r * b_theta / r
 
     Parameters
     ----------
@@ -39,18 +48,44 @@ def compute_curvature_cylindrical(B, grid: CylindricalGrid):
     b_theta = b[..., 1]
     b_z = b[..., 2]
 
+    R = grid.R
     dr = grid.dr
 
+    # Radial advection: b_r * d/dr (always computed)
     db_r_dr = diff_4th(b_r, dr, axis=0)
     db_theta_dr = diff_4th(b_theta, dr, axis=0)
     db_z_dr = diff_4th(b_z, dr, axis=0)
 
-    R = grid.R
-
     kappa_vec = np.zeros_like(B)
-    kappa_vec[..., 0] = b_r * db_r_dr - b_theta**2 / R
-    kappa_vec[..., 1] = b_r * db_theta_dr + b_r * b_theta / R
+    kappa_vec[..., 0] = b_r * db_r_dr
+    kappa_vec[..., 1] = b_r * db_theta_dr
     kappa_vec[..., 2] = b_r * db_z_dr
+
+    # Theta advection: (b_theta / r) * d/dtheta
+    if grid.Ntheta > 1:
+        dtheta = grid.dtheta
+        db_r_dtheta = diff_4th(b_r, dtheta, axis=1)
+        db_theta_dtheta = diff_4th(b_theta, dtheta, axis=1)
+        db_z_dtheta = diff_4th(b_z, dtheta, axis=1)
+
+        kappa_vec[..., 0] += (b_theta / R) * db_r_dtheta
+        kappa_vec[..., 1] += (b_theta / R) * db_theta_dtheta
+        kappa_vec[..., 2] += (b_theta / R) * db_z_dtheta
+
+    # Z advection: b_z * d/dz
+    if grid.Nz > 1:
+        dz = grid.dz
+        db_r_dz = diff_4th(b_r, dz, axis=2)
+        db_theta_dz = diff_4th(b_theta, dz, axis=2)
+        db_z_dz = diff_4th(b_z, dz, axis=2)
+
+        kappa_vec[..., 0] += b_z * db_r_dz
+        kappa_vec[..., 1] += b_z * db_theta_dz
+        kappa_vec[..., 2] += b_z * db_z_dz
+
+    # Geometric terms (cylindrical basis vector derivatives)
+    kappa_vec[..., 0] -= b_theta**2 / R
+    kappa_vec[..., 1] += b_r * b_theta / R
 
     kappa_mag = np.sqrt(np.sum(kappa_vec**2, axis=-1))
 

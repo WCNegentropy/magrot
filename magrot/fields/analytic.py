@@ -132,3 +132,33 @@ def field_dipole_cartesian(X, Z, m=1.0, r_soft=0.003):
     Bz = mu_0 / (4 * np.pi) * m * (3 * Z**2 - r_eff**2) / r_eff**5
     Bmag = np.sqrt(Bx**2 + Bz**2)
     return Bx, Bz, Bmag
+
+
+def field_dipole_cartesian_3d(X, Y, Z, m=1.0, r_soft=0.003):
+    """Full 3D magnetic dipole field with softened origin.
+
+    Dipole moment directed along the z-axis.
+
+    Parameters
+    ----------
+    X, Y, Z : ndarray
+        3D Cartesian coordinate arrays.
+    m : float
+        Magnetic dipole moment (A m^2).
+    r_soft : float
+        Softening radius (m) for origin regularization.
+
+    Returns
+    -------
+    Bx, By, Bz : ndarray
+        Field components.
+    Bmag : ndarray
+        Field magnitude.
+    """
+    r_eff = np.sqrt(X**2 + Y**2 + Z**2 + r_soft**2)
+    prefactor = mu_0 / (4 * np.pi) * m
+    Bx = prefactor * 3 * X * Z / r_eff**5
+    By = prefactor * 3 * Y * Z / r_eff**5
+    Bz = prefactor * (3 * Z**2 - r_eff**2) / r_eff**5
+    Bmag = np.sqrt(Bx**2 + By**2 + Bz**2)
+    return Bx, By, Bz, Bmag

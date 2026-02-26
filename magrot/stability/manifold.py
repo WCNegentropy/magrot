@@ -184,7 +184,6 @@ def constraint_relaxation_sweep_cylindrical(
     L_vals = np.zeros(n_alpha)
 
     r = grid.r
-    s = (slice(None), 0, 0)  # 1D slice for cylindrical
 
     for i, alpha in enumerate(alphas):
         B_pert, p_pert = removal_func(B, p, grid, alpha, **kwargs)
@@ -195,7 +194,13 @@ def constraint_relaxation_sweep_cylindrical(
             res = compute_all_metrics(B_pert, grid, p_mat=p_pert)
             R_field = res['R_universal']
 
-        R_1d = R_field[s]
+        # For 3D grids, average R over theta and z to get radial profile
+        if grid.Ntheta > 1 or grid.Nz > 1:
+            R_1d = np.mean(R_field, axis=tuple(
+                ax for ax in (1, 2) if R_field.shape[ax] > 1
+            ))
+        else:
+            R_1d = R_field[:, 0, 0]
 
         # Core = inner 20%, edge = outer 20%
         n_r = len(r)

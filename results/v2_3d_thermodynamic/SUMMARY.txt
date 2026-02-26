@@ -1,0 +1,80 @@
+MAGROT v2 3D THERMODYNAMIC VALIDATION SUMMARY
+============================================================
+
+Result: 26/37 checks passed
+Time: 11.5s
+
+[PASS] Wire 3D: R_universal mean = 1.0
+        got=1  expected=1  err=0.00e+00
+[PASS] Wire 3D: F_total > 0
+        got=True  expected=True
+[FAIL] Wire 3D: S_dot ~ 0 (vacuum)
+        got=0.323403  expected=0  err=3.23e-01
+[PASS] Wire 3D: angular symmetry (std < 0.01)
+        got=True  expected=True
+[PASS] Wire 3D: div(B) ~ 0
+        got=1.19611e-13  expected=0  err=1.20e-13
+[FAIL] Z-pinch 3D: R_kappa(r=a) ~ 1.0
+        got=1.02704  expected=1  err=2.70e-02
+[PASS] Z-pinch 3D: R_universal(r=a) ~ 1.0
+        got=1.01133  expected=1  err=1.13e-02
+[PASS] Z-pinch 3D: F_total > 0
+        got=True  expected=True
+[PASS] Z-pinch 3D: S_dot > 0 (driven)
+        got=True  expected=True
+[PASS] Z-pinch 3D: P_dissipated > 0
+        got=True  expected=True
+[FAIL] Z-pinch 3D: R-sdot corr > 0
+        got=False  expected=True
+[PASS] Z-pinch 3D: helicity K finite
+        got=1  expected=1  err=0.00e+00
+[PASS] Z-pinch 3D: angular symmetry
+        got=True  expected=True
+[PASS] Z-pinch 3D: div(B) ~ 0
+        got=1.55209e-14  expected=0  err=1.55e-14
+[PASS] Comparison 3D: Z F > 0
+        got=True  expected=True
+[PASS] Comparison 3D: Theta F > 0
+        got=True  expected=True
+[PASS] Comparison 3D: Z S_dot > 0
+        got=True  expected=True
+[PASS] Comparison 3D: Theta kappa ~ 0 (straight)
+        got=True  expected=True
+[FAIL] Dynamics [compressed]: R → 1 (time)
+        got=1.99782  expected=1  err=9.98e-01
+[FAIL] Dynamics [compressed]: R → 1 (entropy)
+        got=0.458327  expected=1  err=5.42e-01
+[FAIL] Dynamics [compressed]: F monotonic
+        got=False  expected=True
+[FAIL] Dynamics [compressed]: a → a_eq
+        got=0.00557034  expected=0.01  err=4.43e-01
+[FAIL] Dynamics [expanded]: R → 1 (time)
+        got=1.73575  expected=1  err=7.36e-01
+[FAIL] Dynamics [expanded]: R → 1 (entropy)
+        got=0.535558  expected=1  err=4.64e-01
+[FAIL] Dynamics [expanded]: F monotonic
+        got=False  expected=True
+[FAIL] Dynamics [expanded]: a → a_eq
+        got=0.00626044  expected=0.01  err=3.74e-01
+[PASS] Stability 3D: pressure H > 0
+        got=1  expected=1  err=0.00e+00
+[PASS] Stability 3D: classification valid
+        got=True  expected=True
+[PASS] Stability 3D: S_dot > 0
+        got=True  expected=True
+[PASS] Stability 3D: J_rms > 0
+        got=True  expected=True
+[PASS] Stability 3D: attractor valid
+        got=True  expected=True
+[PASS] Dipole 3D: R has structure
+        got=True  expected=True
+[PASS] Dipole 3D: no NaN
+        got=0  expected=0  err=0.00e+00
+[PASS] Dipole 3D: u_B > 0
+        got=True  expected=True
+[PASS] Dipole 3D: azimuthal symmetry
+        got=True  expected=True
+[PASS] Screw 3D: F increases with Bz
+        got=True  expected=True
+[PASS] Screw 3D: div(B) ~ 0
+        got=1.94168e-14  expected=0  err=1.94e-14

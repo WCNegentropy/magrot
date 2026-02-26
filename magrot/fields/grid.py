@@ -29,6 +29,8 @@ class CylindricalGrid:
         )
         self.z = np.linspace(self.z_range[0], self.z_range[1], self.Nz)
         self.dr = self.r[1] - self.r[0] if self.Nr > 1 else 1.0
+        self.dtheta = (self.theta[1] - self.theta[0]) if self.Ntheta > 1 else 2 * np.pi
+        self.dz = (self.z[1] - self.z[0]) if self.Nz > 1 else 1.0
         self.R, self.THETA, self.Z = np.meshgrid(
             self.r, self.theta, self.z, indexing='ij'
         )
