@@ -1,3 +1,6 @@
+NOTE: This is the v1 MVP validation summary. For current results see:
+  - results/v2_thermodynamic/RESULTS.md       (v2 1D thermodynamic suite)
+  - results/v2_3d_thermodynamic/RESULTS.md    (v2 full 3D thermodynamic suite)
 
 ╔══════════════════════════════════════════════════════════════════════╗
 ║                    MagRot MVP SIMULATION RESULTS                    ║

@@ -4,6 +4,11 @@ Maxwell stress tensor and conservative force computation.
 Uses J x B (Lorentz force) as the primary force computation rather than
 tension - pressure subtraction, which suffers from catastrophic cancellation
 when both are large and nearly equal (v3 Fix #2).
+
+Supports full 3D cylindrical coordinates (r, theta, z).  When Ntheta > 1
+or Nz > 1, the complete curl(B) is computed including all theta- and
+z-derivative terms.  When both are 1, the axisymmetric shortcut is used
+(backward compatible).
 """
 
 import numpy as np

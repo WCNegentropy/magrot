@@ -4,6 +4,11 @@ Field-line curvature computation.
 Computes kappa = (b . nabla) b where b = B/|B| is the unit tangent
 along the field line.  Uses 4th-order central finite differences with
 2nd-order boundary fallback.
+
+Supports full 3D cylindrical coordinates (r, theta, z).  The directional
+derivative includes radial advection (always), theta advection (when
+Ntheta > 1), z advection (when Nz > 1), and geometric correction terms
+(kappa_r += -b_theta^2/r, kappa_theta += b_r*b_theta/r).
 """
 
 import numpy as np

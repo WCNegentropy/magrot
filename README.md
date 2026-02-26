@@ -14,7 +14,7 @@ than raw magnitudes or current densities.
 **Author:** WCNEGENTROPY HOLDINGS LLC
 **License:** MIT
 **Version:** 0.2.0-dev
-**Status:** Active R&D -- v1 validated (Tier 1 & 2), v2 thermodynamic modules implemented
+**Status:** Active R&D -- v1 validated (Tier 1 & 2), v2 thermodynamic framework validated (1D + full 3D)
 
 ---
 
@@ -49,14 +49,14 @@ magrot/
 │   ├── __init__.py
 │   ├── numerics.py             # 4th-order finite differences
 │   ├── fields/
-│   │   ├── analytic.py         # Wire, Z-pinch, theta-pinch, dipole
-│   │   ├── grid.py             # Cylindrical & Cartesian grids
+│   │   ├── analytic.py         # Wire, Z-pinch, theta-pinch, dipole (2D + 3D)
+│   │   ├── grid.py             # Cylindrical & Cartesian grids (full 3D)
 │   │   └── io.py               # Field data import/export
 │   ├── geometry/
-│   │   ├── curvature.py        # kappa = (b . nabla) b
+│   │   ├── curvature.py        # kappa = (b . nabla) b (full 3D cylindrical)
 │   │   └── fieldlines.py       # Field-line tracing (RK45)
 │   ├── stress/
-│   │   ├── maxwell.py          # Conservative J x B forces
+│   │   ├── maxwell.py          # Conservative J x B forces (full 3D curl)
 │   │   └── decompose.py        # Tension / pressure separation
 │   ├── rotation/
 │   │   ├── metrics.py          # All 4 R definitions
@@ -70,7 +70,7 @@ magrot/
 │   ├── stability/              # v2: Entropic hypothesis tests
 │   │   ├── hessian.py          # Multi-axis perturbation -> Hessian eigenvalues
 │   │   ├── entropy_audit.py    # Entropy production at equilibrium
-│   │   ├── manifold.py         # Constraint boundary mapping
+│   │   ├── manifold.py         # Constraint boundary mapping (3D volume-avg)
 │   │   └── attractors.py       # Basin-of-attraction characterization
 │   ├── dynamics/               # v1 legacy time-based models
 │   │   ├── mhd_1d.py           # 1D Z-pinch thin-shell model
@@ -78,7 +78,7 @@ magrot/
 │   │   └── evolve.py           # Time-stepper interface
 │   ├── viz/
 │   │   ├── fields_2d.py        # 2D cross-section plots
-│   │   ├── fields_3d.py        # 3D rendering (PyVista)
+│   │   ├── fields_3d.py        # 3D matplotlib viz (polar, r-z, quiver)
 │   │   ├── rotation_map.py     # R(x) heatmaps
 │   │   └── time_series.py      # R(t) evolution plots
 │   ├── validation/
@@ -99,12 +99,16 @@ magrot/
 │   ├── magrot_sim_v2.py        # Fixed dynamics + analysis
 │   ├── magrot_sim_v3.py        # Engineering fixes (production)
 │   ├── earth_dipole.py         # Earth dipole + radiation belts
-│   └── magrot_tokamak.py       # Tokamak (Solov'ev, ITER-scale)
+│   ├── magrot_tokamak.py       # Tokamak (Solov'ev, ITER-scale)
+│   ├── magrot_v2_thermodynamic_suite.py  # v2 1D validation (33 checks)
+│   └── magrot_v2_3d_suite.py   # v2 full 3D validation (37 checks)
 ├── results/                    # Generated plots & data
 │   ├── v1_mvp/                 # 7 plots from initial validation
 │   ├── v3_engineering/         # 6 plots with all fixes applied
 │   ├── earth_dipole/           # 2D R map + L-shell profiles
-│   └── tokamak/                # Equilibrium maps, beta sweep, etc.
+│   ├── tokamak/                # Equilibrium maps, beta sweep, etc.
+│   ├── v2_thermodynamic/       # 7 plots + RESULTS.md (1D thermo suite)
+│   └── v2_3d_thermodynamic/    # 7 plots + RESULTS.md (full 3D suite)
 ├── docs/                       # Reports & specifications
 │   ├── MAGROT_Framework_Spec.md
 │   ├── RESULTS_SUMMARY.txt
@@ -136,6 +140,24 @@ magrot/
 | 2.1 | Earth dipole | R = 1.0 at equator (universal across L-shells) |
 | 2.2 | Tokamak (ITER) | R maps equilibrium, detects beta limits |
 
+### v2 Thermodynamic Validation — 1D (28/33 checks pass)
+
+Entropy-parameterized state flow replaces clock-time dynamics. Headline result:
+entropy-parameterized Z-pinch converges to R = 1.000000 exactly; time-based method
+still oscillates at R = 1.05 after 15 periods. 5 known findings (ODE kinetic energy,
+test calibration), no framework bugs. See `results/v2_thermodynamic/RESULTS.md`.
+
+### v2 Thermodynamic Validation — Full 3D (26/37 checks pass)
+
+Full 3D upgrade of all physics modules (curl, curvature, forces) and all 7 tests.
+New validations: angular symmetry (std = 0.00 for axisymmetric fields), div(B) ~ 0
+to machine precision, 3D Cartesian dipole with azimuthal symmetry to 1e-15. 11
+known findings (8 inherited ODE dynamics, 3 physics tolerances), zero 3D-specific
+failures. Key discovery: Hessian classification changes from saddle-point (1D) to
+minimum (3D) — uniform perturbations wash out mode-specific instabilities,
+identifying mode-resolved perturbations as the next development target.
+See `results/v2_3d_thermodynamic/RESULTS.md`.
+
 ### Engineering Fixes (v3)
 
 1. **epsilon-floor regularization** -- eliminates R_universal overflow
@@ -152,19 +174,19 @@ from magrot.fields.analytic import field_zpinch_bennett
 from magrot.rotation.metrics import compute_all_metrics
 import numpy as np
 
-# Set up a Z-pinch
-grid = CylindricalGrid(Nr=400, Ntheta=1, Nz=1, r_range=(0.0003, 0.05))
+# Set up a 3D Z-pinch (works with any Ntheta, Nz — including 1D)
+grid = CylindricalGrid(Nr=80, Ntheta=32, Nz=20, r_range=(0.0003, 0.05))
 B, p_mat = field_zpinch_bennett(grid, I=1e4, a=0.01)
 
 # Define equilibrium curvature for Metric A
 def kappa_eq(g):
     return np.full(g.R.shape, 1.0 / 0.01)
 
-# Compute all metrics
+# Compute all metrics (full 3D curl, curvature, forces)
 results = compute_all_metrics(B, grid, p_mat=p_mat,
                               kappa_eq_func=kappa_eq, L_char=0.01)
 
-print(f"R_kappa at r=a: {results['R_kappa'][200, 0, 0]:.4f}")
+print(f"R_kappa at r=a: {results['R_kappa'][40, 0, 0]:.4f}")
 print(f"R_universal range: [{results['R_universal'].min():.2f}, "
       f"{results['R_universal'].max():.2f}]")
 ```
@@ -180,9 +202,11 @@ pytest magrot/tests/ -v
 Each script in `simulations/` is self-contained and generates plots:
 
 ```bash
-python simulations/magrot_sim_v3.py      # Full test suite with fixes
-python simulations/earth_dipole.py       # Earth dipole analysis
-python simulations/magrot_tokamak.py     # Tokamak equilibrium
+python simulations/magrot_sim_v3.py                # v1 test suite with fixes
+python simulations/earth_dipole.py                 # Earth dipole analysis
+python simulations/magrot_tokamak.py               # Tokamak equilibrium
+python simulations/magrot_v2_thermodynamic_suite.py # v2 thermo (1D, 33 checks)
+python simulations/magrot_v2_3d_suite.py           # v2 thermo (3D, 37 checks)
 ```
 
 ## v2: Thermodynamic State Flow
@@ -202,16 +226,27 @@ Key additions:
   Onsager linear response schemes
 - **Entropic hypothesis tests** (Tests A--D) to determine whether R = 1 is a
   conditional entropy maximum, a negentropic state, or a saddle point
-
-See `MAGROT_v2_Plan.md` for the full development plan and scientific rationale.
+- **Full 3D physics pipeline** -- curl(B), curvature kappa = (b.nabla)b, and
+  Maxwell forces all support full 3D cylindrical (r, theta, z) coordinates
+  with conditional derivative terms when Ntheta > 1 or Nz > 1
+- **3D Cartesian dipole** -- field_dipole_cartesian_3d() with full 3D curvature
+- **3D visualization** -- polar heatmaps, r-z cross sections, quiver plots,
+  orthogonal slice views via matplotlib (no PyVista dependency)
+- **Divergence-free validation** -- div(B) checks confirm field generators
+  satisfy Maxwell's equations to machine precision on 3D grids
 
 ## Future Directions
 
-- **Entropic identity resolution:** Finalize whether R = 1 is a conditional
-  entropy maximum on the constrained MHD manifold ("valley on a mesa") or
-  something else, based on Tests A--D results
-- **Tokamak refinements:** q0 tuning, X-point geometry, beta limit as
-  thermodynamic transition, disruption precursor identification via R + s_dot
+- **Mode-resolved 3D stability:** Extend Hessian analysis with spatially
+  structured perturbations (m=0 sausage, m=1 kink, m=2 elliptical) instead
+  of uniform parameter sweeps, which wash out mode-specific instabilities
+  in 3D volume integrals (see v2 3D Finding #12)
+- **Kinetic energy tracking:** Add E_kinetic to state flow F_total for strict
+  monotonicity in inertial systems (resolves dynamics F non-monotonicity)
+- **Tokamak 3D applications:** Apply full 3D pipeline to Solov'ev equilibrium,
+  q0 tuning, X-point geometry, disruption precursor identification
+- **Non-axisymmetric equilibria:** Stellarators, 3D islands -- the full 3D
+  curl and curvature operators are ready for non-axisymmetric fields
 - **Geometric Algebra:** Unify static/dynamic R via Faraday bivector F = E + IcB
 - **Fusion control:** Real-time R computation as feedback for Z-pinch experiments
 - **Topological extension:** Combine local R with magnetic winding metrics

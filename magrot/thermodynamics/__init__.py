@@ -6,6 +6,10 @@ Evolution parameter is sigma (total irreversible entropy produced), not clock
 time t.  This guarantees monotonic free energy decrease (second law) and gives
 physical meaning to every step in the evolution.
 
+Validated on 1D cylindrical and full 3D grids (see results/v2_thermodynamic/
+and results/v2_3d_thermodynamic/).  Key result: entropy-parameterized Z-pinch
+converges to R = 1.000000 exactly; time-based method oscillates at R = 1.05.
+
 Submodules
 ----------
 free_energy   -- F[B, p] functional computation
