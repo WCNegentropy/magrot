@@ -3,8 +3,29 @@
 **Date:** 2026-02-26
 **Author:** WCNEGENTROPY HOLDINGS LLC
 **Status:** Plan — pending implementation
-**Hardware target:** A100 80GB (Hugging Face Spaces)
 **Development environment:** GitHub Codespace (CPU, pre-port + testing)
+**Production environment:** Private HuggingFace Space — A100 Large JupyterLab
+
+---
+
+## 0. Hardware Specification
+
+| Resource | Codespace (Dev) | HF Space A100 Large (Prod) |
+|----------|----------------|---------------------------|
+| GPU | None (CPU only) | NVIDIA A100 80GB SXM |
+| VRAM | — | 80 GB HBM2e (2 TB/s bandwidth) |
+| System RAM | 16 GB | 142 GB |
+| CPU | 4 vCPU | 12 vCPU |
+| Cost | Included / $0.18/hr | $2.50/hr |
+| Runtime | JupyterLab (Codespace) | JupyterLab (HF Docker template) |
+| JAX backend | `jax[cpu]` | `jax[cuda12]` (CUDA 12.x, cuDNN 9) |
+| Persistent storage | Git repo | HF Space persistent storage (50GB) |
+
+**Key insight:** The HF Space uses the **JupyterLab Docker template**, not a
+blind Gradio/Streamlit app. This means we have a full interactive notebook
+environment with live 3D visualization, widget-based parameter steering, and
+real-time monitoring — transforming the optimization from a batch job into an
+**interactive command center**.
 
 ---
 
@@ -24,30 +45,35 @@ optimized for MHD stability from first principles. These geometries are the
 protectable IP.
 
 **What already exists:** The MAGROT 3D physics pipeline (curl, curvature, forces,
-R metrics, free energy, Lyapunov functional) is validated on grids up to 64K
-points with 53 passing unit tests and 37 regression checks. The mathematical
-machinery is ready — it just needs a JAX backend and a Biot-Savart front end.
+R metrics, free energy, Lyapunov functional) is validated on grids up to 218K
+points (Nr=80, Ntheta=32, Nz=20) with 53 passing unit tests and 37 regression
+checks (26 pass, 11 known findings). The mathematical machinery is ready — it
+just needs a JAX backend and a Biot-Savart front end.
 
 ---
 
 ## 2. Architecture Overview
 
 ```
-                    CODESPACE (CPU)                    │     HF SPACE (A100)
-                                                       │
+                    CODESPACE (CPU)                    │     HF SPACE (A100 Large)
+                                                       │     JupyterLab Environment
   ┌─────────────────────────────────────┐              │
-  │  magrot.jax_core                    │              │
-  │  ├── numerics_jax.py    (diff_4th)  │              │
-  │  ├── curvature_jax.py   (kappa)     │              │
-  │  ├── maxwell_jax.py     (curl, J×B) │              │
-  │  ├── metrics_jax.py     (R_univ)    │              │
-  │  ├── free_energy_jax.py (F, L_R)    │              │
-  │  └── biot_savart.py     (coils→B)   │  ──deploy──> │  magrot_generative.py
-  │                                     │              │  ├── Loss function
-  │  tests/test_jax_parity.py           │              │  ├── jax.grad(Loss)
-  │  (NumPy == JAX to 1e-6)             │              │  ├── optax optimizer
-  └─────────────────────────────────────┘              │  ├── jax.vmap (batch)
-                                                       │  └── Checkpoint + export
+  │  magrot.jax_core                    │              │  ┌─────────────────────────────────┐
+  │  ├── numerics_jax.py    (diff_4th)  │              │  │  Forge_Dashboard.ipynb           │
+  │  ├── curvature_jax.py   (kappa)     │              │  │  ├── Live 3D coil viz (PyVista)  │
+  │  ├── maxwell_jax.py     (curl, J×B) │              │  │  ├── R-field heatmaps (real-time)│
+  │  ├── metrics_jax.py     (R_univ)    │              │  │  ├── Loss curve dashboard         │
+  │  ├── free_energy_jax.py (F, L_R)    │  ──deploy──> │  │  ├── Weight sliders (live tune)  │
+  │  └── biot_savart.py     (coils→B)   │              │  │  └── Tournament leaderboard      │
+  │                                     │              │  └─────────────────────────────────┘
+  │  magrot_generative.py               │              │
+  │  ├── forge_loss()                   │              │  magrot_generative.py (GPU mode)
+  │  ├── optax optimizer                │              │  ├── jax.vmap (4,096 candidates)
+  │  └── CPU validation (20³, 3 coils)  │              │  ├── jax.checkpoint (rematerialization)
+  │                                     │              │  ├── Async host RAM callbacks
+  │  tests/test_jax_parity.py           │              │  ├── Tournament selection
+  │  (NumPy == JAX to 1e-6)             │              │  └── Multi-epoch refinement
+  └─────────────────────────────────────┘              │
 ```
 
 ---
@@ -82,10 +108,13 @@ machinery is ready — it just needs a JAX backend and a Biot-Savart front end.
 | 4 | `decompose.py` uses `np.maximum`/`np.zeros_like` | Direct 1:1 replacement with `jnp.maximum`/`jnp.zeros_like`. |
 | 5 | `CylindricalGrid` dataclass with `__post_init__` | For the optimizer, we don't need the grid object — just pre-compute `r`, `dr`, `dtheta`, `dz` as static arrays and pass them through. The grid is not a parameter being optimized. |
 | 6 | R_universal has conditional branches (`is_quiet`, `active`, etc.) | Replace with nested `jnp.where` chains. All branches are element-wise, no shape changes — fully JIT-compatible. |
-| 7 | `vmap` over 10,000 topologies on A100 | **Too aggressive.** Each evaluation needs ~64K-point grid × ~15 arrays × 4 bytes = ~4MB. With optimizer state and gradients, ~20MB per candidate. 10K × 20MB = 200GB — exceeds A100 VRAM. Realistic batch: **128-512 candidates**, with sequential outer loop for larger populations. See Section 7. |
+| 7 | Original plan assumed 10K vmap batch on A100 | Revised. See Section 8 for full VRAM budget — with `jax.checkpoint`, 4,096 candidates fit comfortably. Without checkpointing, 2,000-3,000. |
 | 8 | Coil parameterization not specified | Use Fourier descriptors for closed curves (standard in stellarator optimization). Each coil = N_fourier × 3 (x,y,z) cosine/sine coefficients. ~20-40 params per coil, 10-20 coils = 200-800 total parameters. Very tractable for gradient-based optimization. |
 | 9 | Loss function missing engineering constraints | Add coil curvature penalty, minimum coil-coil distance, coil-plasma distance, and total coil length regularization. Without these, the optimizer will produce physically unbuildable coils. |
 | 10 | No mention of magnetic surfaces / flux surfaces | For stellarator optimization, the target isn't just R=1 everywhere — it's R=1 on closed flux surfaces with specific rotational transform (iota) profile. Add iota target to loss. |
+| 11 | **Original plan ignored JupyterLab environment** | The HF Space runs JupyterLab, not a blind script. We build an interactive dashboard with live 3D visualization, real-time loss monitoring, and dynamic weight sliders. See Section 9. |
+| 12 | **Original plan wasted 142GB system RAM** | Use asynchronous host callbacks (`jax.experimental.io_callback`) to stream candidate states from GPU VRAM to host RAM continuously. The GPU never pauses for I/O — 100% utilization. See Section 8.3. |
+| 13 | **No tournament / evolutionary strategy** | A single optimizer pass misses the landscape. Use multi-epoch tournament selection: massive seed → coarse filter → fine polish. See Section 10. |
 
 ---
 
@@ -114,7 +143,7 @@ magrot/jax_core/
 
 **Key porting decisions:**
 
-#### 4.1 `diff_4th_jax` — The Critical Function
+#### 5.1 `diff_4th_jax` — The Critical Function
 
 Every derivative in the pipeline flows through `diff_4th`. The NumPy version
 uses 5 in-place slice assignments. JAX requires a functional approach:
@@ -142,7 +171,7 @@ naturally handles boundaries via padding mode, and is extremely fast on GPU.
 **Recommendation:** Implement both approaches, benchmark on CPU, deploy the
 faster one to GPU.
 
-#### 4.2 `metrics_jax.py` — R_universal Without Branches
+#### 5.2 `metrics_jax.py` — R_universal Without Branches
 
 The current R_universal computation uses 4 boolean masks (`is_quiet`, `active`,
 `inward_dom`, `outward_dom`) with conditional assignment. In JAX:
@@ -156,7 +185,7 @@ R_universal = jnp.where(is_quiet, 1.0,
 R_universal = jnp.clip(R_universal, R_MIN, R_MAX)
 ```
 
-#### 4.3 Parity Tests
+#### 5.3 Parity Tests
 
 For every JAX function, a test that:
 1. Creates identical inputs (NumPy array → `jnp.array`)
@@ -287,7 +316,7 @@ def forge_loss(coil_params, grid_points, grid_info, weights):
 and deploys to GPU (full scale) without code changes.
 
 ```python
-# magrot_generative.py (simplified)
+# magrot_generative.py (simplified — CPU validation mode)
 
 import jax
 import optax
@@ -312,23 +341,12 @@ move in physically reasonable directions. Not trying to find good designs — ju
 validating the pipeline.
 
 **On A100 (HF Space):** Full grid (64^3+ = 262K points), 10-20 coils,
-N_fourier=10-15, for 10K+ steps with learning rate scheduling.
+N_fourier=10-15, with tournament selection and multi-epoch refinement. See
+Sections 8-10.
 
 ---
 
-## 5. What CANNOT Be Done in Codespace
-
-| Task | Why Not | When (HF Space) |
-|------|---------|------------------|
-| Full-scale optimization (64^3 grid, 20 coils) | Needs GPU VRAM + FLOPS | Phase F5 |
-| `jax.vmap` batch over 128+ topologies | Needs ~10GB+ VRAM | Phase F5 |
-| Production runs generating patentable geometries | Needs hours of A100 time | Phase F6 |
-| Performance benchmarking (JAX vs NumPy speedup) | Meaningless on CPU | Phase F5 |
-| Mixed-precision (float16/bfloat16) tuning | GPU-specific optimization | Phase F5 |
-
----
-
-## 6. What CAN Be Done in Codespace (Full Scope)
+## 6. Codespace Phase Summary
 
 | Phase | Task | Deliverable | Est. Effort |
 |-------|------|-------------|-------------|
@@ -346,54 +364,317 @@ N_fourier=10-15, for 10K+ steps with learning rate scheduling.
 
 ---
 
-## 7. GPU Deployment Plan (HF Space — Post-Codespace)
+## 7. What Can vs. Cannot Be Done in Codespace
 
-### Phase F5: A100 Deployment
+**Can do (CPU):**
 
-1. Create HF Space with `A100` hardware, JAX + CUDA runtime
-2. Copy `magrot/` package + `magrot_generative.py`
-3. Run parity tests on GPU (verify CPU results reproduce)
-4. Benchmark: measure grid points/second, gradients/second
-5. Tune batch size for `jax.vmap` (target: 128-512 candidates per batch)
-6. Implement mixed-precision where safe (Biot-Savart in float32, loss in float64)
+| Task | Why |
+|------|-----|
+| All JAX porting (F1a-F1d) | Pure code translation, no GPU needed |
+| Parity tests (F1e) | Small arrays, NumPy == JAX on CPU |
+| Biot-Savart integrator (F2) | Math-only, no GPU dependency |
+| Loss function definition (F3) | Function composition |
+| Optimization loop structure (F4) | optax runs on CPU |
+| Small-scale validation (F4b) | 20^3 grid, 3 coils, 1K steps |
 
-### Phase F6: Production Geometry Generation
+**Cannot do (needs A100):**
 
-1. **Seed generation:** Initialize 1000+ random coil topologies using
-   physically motivated priors (e.g., stellarator symmetry constraints,
-   reasonable aspect ratios, known good starting shapes from literature)
-
-2. **Multi-stage optimization:**
-   - Stage 1: Coarse grid (32^3), fast optimizer (Adam, high LR), 5K steps
-     → rapid topology screening, discard bottom 80%
-   - Stage 2: Medium grid (48^3), fine optimizer (L-BFGS), 10K steps
-     → refine surviving topologies
-   - Stage 3: Fine grid (64^3+), final polish, 5K steps
-     → production-quality geometries
-
-3. **Geometry export:** Save optimized coil Fourier coefficients + reconstructed
-   coil curves as standard formats (JSON, VTK, STEP for CAD import)
-
-4. **Validation:** Run each final geometry back through the NumPy MAGROT pipeline
-   (the validated version) to confirm R metrics match JAX results
-
-### Memory Budget (A100 80GB)
-
-| Component | Per-Candidate | 128 Candidates | 512 Candidates |
-|-----------|--------------|----------------|----------------|
-| B-field grid (64^3 × 3 × 4B) | 3 MB | 384 MB | 1.5 GB |
-| R metrics + intermediates (~15 arrays) | 15 MB | 1.9 GB | 7.7 GB |
-| Coil params + gradients | 0.1 MB | 13 MB | 51 MB |
-| Optimizer state (Adam: 2× params) | 0.2 MB | 26 MB | 102 MB |
-| XLA compilation overhead | ~2 GB (shared) | 2 GB | 2 GB |
-| **Total** | **~18 MB** | **~4.3 GB** | **~11.4 GB** |
-
-512 candidates at 64^3 resolution fits comfortably in 80GB. At 48^3 resolution,
-we could push to ~2000 candidates per batch.
+| Task | Why | When |
+|------|-----|------|
+| Full-scale optimization (64^3, 20 coils) | Needs GPU VRAM + FLOPS | Phase F5 |
+| `jax.vmap` batch over 2,000+ topologies | Needs 40GB+ VRAM | Phase F5 |
+| `jax.checkpoint` memory tuning | GPU-specific rematerialization | Phase F5 |
+| Live 3D dashboard (PyVista + trame) | Needs GPU rendering + JupyterLab | Phase F5b |
+| Tournament selection at scale | Needs batch throughput | Phase F6 |
+| Production runs generating patentable geometries | Needs hours of A100 time | Phase F6 |
+| Mixed-precision (bfloat16) tuning | GPU-specific optimization | Phase F5 |
+| Async host RAM callbacks | Needs GPU→host DMA path | Phase F5 |
 
 ---
 
-## 8. Differentiation from Existing Tools
+## 8. VRAM Reality Check: Uncapping the Batch Size
+
+### 8.1 Per-Candidate Memory Footprint (64^3 Grid)
+
+| Component | Size | Notes |
+|-----------|------|-------|
+| B-field grid (64^3 × 3 × float32) | 3.1 MB | 3 cylindrical components |
+| R metrics + 15 intermediate arrays | 15.5 MB | Forces, curvature, decomposition |
+| Coil params (300 floats × float32) | 1.2 KB | Negligible |
+| Optimizer state (Adam: 2× params) | 2.4 KB | Negligible |
+| Gradient tape (backward pass) | ~18 MB | XLA stores activations for backprop |
+| **Total without checkpointing** | **~37 MB** | Forward + backward combined |
+| **Total with `jax.checkpoint`** | **~8 MB** | Recompute forward during backward |
+
+### 8.2 Batch Size Scaling on A100 80GB
+
+| Strategy | Per-Candidate | Batch Size | VRAM Used | VRAM Free |
+|----------|--------------|------------|-----------|-----------|
+| No checkpointing | 37 MB | 512 | 19 GB | 61 GB |
+| No checkpointing | 37 MB | 2,000 | 74 GB | 6 GB |
+| **`jax.checkpoint`** | **8 MB** | **4,096** | **33 GB** | **47 GB** |
+| `jax.checkpoint` | 8 MB | 8,192 | 65 GB | 15 GB |
+| XLA compilation overhead | — | — | ~2 GB | (shared) |
+
+**Recommendation:** Use `jax.checkpoint` from the start. It wraps the loss
+function with gradient rematerialization — trading ~30% more compute for ~4.5×
+less memory. On the A100's 312 TFLOPS (bfloat16), the extra compute is
+negligible. The memory savings unlock **4,096 parallel candidates** per vmap
+call.
+
+```python
+# Wrap the loss function for gradient rematerialization
+@jax.checkpoint
+def forge_loss_checkpointed(coil_params, grid_points, grid_info, weights):
+    return forge_loss(coil_params, grid_points, grid_info, weights)
+
+# vmap over 4,096 candidates in a single call
+batched_loss_and_grad = jax.vmap(
+    jax.value_and_grad(forge_loss_checkpointed),
+    in_axes=(0, None, None, None)  # Only coil_params vary per candidate
+)
+```
+
+### 8.3 The 142GB System RAM Advantage
+
+With 142 GB of host RAM, we never need to write checkpoints to disk during the
+optimization loop. Instead, use **asynchronous host callbacks** to stream
+candidate states from GPU VRAM → host RAM without pausing the GPU:
+
+```python
+import jax
+
+def async_log_to_host(step, losses, best_coils):
+    """Called asynchronously — GPU doesn't wait for this to complete."""
+    # Store in host-side ring buffer (pre-allocated numpy array in RAM)
+    history_buffer[step % BUFFER_SIZE] = {
+        'losses': np.asarray(losses),          # GPU→CPU transfer
+        'best_coils': np.asarray(best_coils),  # Only top-K, not all 4096
+        'timestamp': time.time()
+    }
+
+# In the training loop:
+jax.debug.callback(async_log_to_host, step, losses, top_k_coils)
+```
+
+**Memory budget (host RAM):**
+
+| Component | Size | Notes |
+|-----------|------|-------|
+| Python + JAX runtime | ~4 GB | JupyterLab + JAX + libraries |
+| History buffer (10K steps × top-50 candidates) | ~6 GB | Coil params + losses per step |
+| PyVista rendering buffers | ~2 GB | 3D visualization mesh data |
+| NumPy validation arrays | ~8 GB | For cross-checking against NumPy pipeline |
+| OS + headroom | ~10 GB | |
+| **Total used** | **~30 GB** | |
+| **Available for data / working memory** | **~112 GB** | |
+
+We can hold the **entire optimization history** (all 10K+ steps, all loss
+components, top candidates at each step) in RAM without ever touching disk.
+The GPU runs at 100% utilization — zero I/O stalls.
+
+---
+
+## 9. The JupyterLab Command Center (Phase F5b)
+
+The HF Space JupyterLab environment transforms the optimization from a blind
+batch job into an interactive, visual, human-steerable system.
+
+### 9.1 Environment Setup
+
+```bash
+# In HF Space terminal (first boot):
+pip install jax[cuda12] optax equinox
+pip install pyvista[jupyter] trame trame-vuetify trame-vtk ipywidgets
+pip install plotly  # For 2D dashboards
+```
+
+### 9.2 Live Dashboard: `Forge_Dashboard.ipynb`
+
+The notebook is structured as a command center with four panels:
+
+**Panel 1: Live 3D Coil + Field Visualization (PyVista + trame)**
+
+```python
+import pyvista as pv
+
+plotter = pv.Plotter(notebook=True)
+
+def update_viz(step, coil_coords, R_field):
+    """Called every 50 optimization steps."""
+    plotter.clear()
+    # Draw coil curves
+    for coil in coil_coords:
+        spline = pv.Spline(coil, n_points=200)
+        plotter.add_mesh(spline.tube(radius=0.02), color='copper')
+    # Draw R=1 isosurface (the target equilibrium surface)
+    grid = pv.ImageData(dimensions=(64, 64, 64))
+    grid['R'] = R_field.flatten(order='F')
+    iso = grid.contour([1.0], scalars='R')
+    plotter.add_mesh(iso, opacity=0.3, color='blue')
+    plotter.update()
+```
+
+**Panel 2: Real-Time Loss Dashboard (Plotly)**
+
+Live-updating line plots for each loss component (L_R, F_total, R_grad,
+L_curvature, L_distance, L_length) and the total loss. Enables immediate
+diagnosis: if L_curvature is rising while L_R drops, the optimizer is trading
+buildability for physics — time to adjust weights.
+
+**Panel 3: Weight Sliders (ipywidgets) — Human-in-the-Loop Steering**
+
+```python
+import ipywidgets as widgets
+
+w_R_slider = widgets.FloatSlider(value=1.0, min=0.0, max=10.0, step=0.1,
+                                  description='w_R (physics)')
+w_curv_slider = widgets.FloatSlider(value=0.1, min=0.0, max=5.0, step=0.05,
+                                     description='w_curv (bend)')
+w_dist_slider = widgets.FloatSlider(value=0.5, min=0.0, max=5.0, step=0.05,
+                                     description='w_dist (gap)')
+
+# The optimizer reads current slider values at each step:
+def get_live_weights():
+    return {
+        'w_R': w_R_slider.value,
+        'w_curv': w_curv_slider.value,
+        'w_dist': w_dist_slider.value,
+        # ...
+    }
+```
+
+This enables **dynamic weight adjustment while the optimizer runs**. If you see
+coils getting too twisted in the 3D view, slide up `w_curv` and watch them
+smooth out in real-time. If R isn't converging fast enough, crank up `w_R`. This
+is impossible with a batch script — it's a direct consequence of the JupyterLab
+environment.
+
+**Panel 4: Tournament Leaderboard**
+
+A live-updating table showing the top-K candidates by loss, with per-component
+breakdown. Highlights candidates that are Pareto-optimal across different
+loss terms (e.g., one candidate with the best L_R, another with the best
+L_curvature). Enables manual selection of promising candidates for
+high-resolution refinement.
+
+### 9.3 Why This Matters for IP
+
+The interactive dashboard isn't just convenience — it's a **competitive
+advantage**. Existing stellarator optimization tools (SIMSOPT, DESC) run as
+batch jobs. The researcher submits a configuration, waits hours, inspects
+results, adjusts, resubmits. MagRot Forge's live dashboard enables:
+
+- Real-time insight into loss landscape topology
+- Human intuition guiding the optimizer (weight steering)
+- Immediate identification of promising vs. dead-end candidates
+- 10× faster iteration cycles (seconds to adjust, not hours to resubmit)
+
+---
+
+## 10. Tournament Selection: The Great Filter (Phase F6)
+
+### 10.1 Strategy Overview
+
+Rather than optimizing a single candidate to convergence, we run a **tournament**
+that evolves a massive population through increasingly fine resolution. This is
+how you find global optima in a landscape with many local minima.
+
+```
+Epoch 1: THE SEED (4,096 candidates)
+  Grid: 32³ (32K points) — coarse but fast
+  Optimizer: Adam (lr=3e-3, aggressive)
+  Steps: 1,000
+  Goal: Rapid topology screening
+  ↓ Kill bottom 75% by total loss
+  ↓
+
+Epoch 2: THE FILTER (1,024 survivors)
+  Grid: 48³ (110K points) — medium resolution
+  Optimizer: Adam (lr=1e-3, moderate) → L-BFGS (last 500 steps)
+  Steps: 3,000
+  Goal: Refine promising topologies, identify clusters
+  ↓ Kill bottom 75%, keep top 256
+  ↓
+
+Epoch 3: THE POLISH (256 elite candidates)
+  Grid: 64³ (262K points) — full resolution
+  Optimizer: L-BFGS (precise)
+  Steps: 5,000
+  Goal: Converge to true local optima
+  ↓ Select top 10 by Pareto ranking
+  ↓
+
+EXPORT: Top 10 novel coil geometries
+  → Fourier coefficients (JSON)
+  → 3D coil curves (VTK)
+  → CAD-ready surfaces (STEP)
+  → Full MagRot diagnostic report (NumPy validation)
+```
+
+### 10.2 Epoch 1: The Seed
+
+```python
+# Initialize 4,096 random but physically bounded stellarator coil sets
+key = jax.random.PRNGKey(42)
+keys = jax.random.split(key, 4096)
+
+def init_candidate(key):
+    """Create one random coil set with physical priors."""
+    coil_params = jax.random.normal(key, shape=(N_coils, N_fourier, 3, 2))
+    # Scale to reasonable stellarator aspect ratios
+    coil_params = coil_params * 0.1  # Small perturbations around circular
+    # Add circular baseline (mode 1 = circle)
+    coil_params = coil_params.at[:, 0, :, 0].add(
+        stellarator_baseline_coils  # Pre-computed circular coil positions
+    )
+    return coil_params
+
+all_candidates = jax.vmap(init_candidate)(keys)  # Shape: (4096, N_coils, ...)
+```
+
+At 32^3 resolution with `jax.checkpoint`, each candidate needs ~2 MB. 4,096
+candidates = ~8 GB. This leaves 70+ GB free for XLA working memory.
+
+### 10.3 Epoch 2: The Filter
+
+After Epoch 1, sort all 4,096 by total loss. The top 1,024 are promoted.
+But instead of just taking the top by scalar loss, apply **Pareto filtering**:
+keep candidates that are best in *any* loss component, not just total. This
+preserves diversity — a candidate with excellent L_R but mediocre L_curvature
+might be one weight adjustment away from being the global best.
+
+The resolution increases to 48^3, so per-candidate memory rises. 1,024
+candidates at 48^3 with checkpointing: ~5 MB each = ~5 GB. Still comfortable.
+
+### 10.4 Epoch 3: The Polish
+
+The surviving 256 candidates get full 64^3 resolution. This is where L-BFGS
+shines — it uses curvature information (approximate Hessian) to find the exact
+bottom of each loss basin, not just the general direction.
+
+256 candidates at 64^3 with checkpointing: ~8 MB each = ~2 GB. Trivial.
+
+The optimizer can afford to run 5,000 steps with L-BFGS because the batch is
+small and the resolution is high — each step is more expensive but more
+informative.
+
+### 10.5 Time Budget
+
+| Epoch | Candidates | Grid | Steps | Est. Time/Step | Total Time |
+|-------|-----------|------|-------|----------------|------------|
+| 1 | 4,096 | 32³ | 1,000 | ~0.5s (vmap) | ~8 min |
+| 2 | 1,024 | 48³ | 3,000 | ~0.8s (vmap) | ~40 min |
+| 3 | 256 | 64³ | 5,000 | ~1.2s (vmap) | ~100 min |
+| **Total** | | | | | **~2.5 hours** |
+
+At $2.50/hr, a full tournament costs **~$6.25**. Running 4 tournaments with
+different random seeds and weight configurations: ~$25 for a comprehensive
+exploration of the design space.
+
+---
+
+## 11. Differentiation from Existing Tools
 
 The stellarator optimization community has mature tools (SIMSOPT, DESC, ROSE).
 MagRot Forge's differentiator:
@@ -406,6 +687,9 @@ MagRot Forge's differentiator:
 | Free energy tracking | Not primary | **Core feature** (F monotonicity) |
 | Entropy production | Not available | **Built-in** (identifies driven state) |
 | Hessian analysis | Separate computation | **Integrated** (loss term) |
+| Batch search | Sequential | **4,096 parallel** (vmap + tournament) |
+| Interactive steering | No (batch jobs) | **Live dashboard** (JupyterLab + widgets) |
+| Hardware | CPU clusters | **Single A100** (JAX XLA compilation) |
 
 The novel contribution is using **R-metric-based physics** as the optimization
 target rather than quasi-symmetry or neoclassical transport. This is a genuinely
@@ -416,7 +700,7 @@ that QS-based methods miss.
 
 ---
 
-## 9. IP Strategy
+## 12. IP Strategy
 
 The protectable assets from MagRot Forge fall into three categories:
 
@@ -437,24 +721,27 @@ updating to explicitly exclude `jax_core/`.
 
 ---
 
-## 10. Risks and Mitigations
+## 13. Risks and Mitigations
 
 | Risk | Likelihood | Impact | Mitigation |
 |------|-----------|--------|-----------|
 | JAX port introduces numerical discrepancy | Medium | High (wrong physics) | Parity tests with 1e-6 tolerance before any optimization |
-| Loss landscape has many local minima | High | Medium (suboptimal designs) | Population-based search via vmap + simulated annealing schedule |
+| Loss landscape has many local minima | High | Medium (suboptimal designs) | Tournament selection (4,096 seeds), Pareto filtering, weight steering |
 | Coils converge to unbuildable shapes | High | High (useless output) | Engineering penalty terms from day 1; validate with min bend radius |
-| A100 OOM on large batches | Low | Low (just reduce batch) | Memory budget computed above; 512 candidates fits |
-| Biot-Savart is the bottleneck | Medium | Medium (slow) | Use segment-parallel implementation; can also precompute matrix for fixed grid |
+| A100 OOM on large batches | Low | Low (just reduce batch) | `jax.checkpoint` + memory budget computed above; 4,096 fits with headroom |
+| Biot-Savart is the bottleneck | Medium | Medium (slow) | Segment-parallel implementation; precompute matrix for fixed grid |
 | R_universal has flat regions (gradient vanishes) | Medium | Medium (stuck) | Use L_R + F_total + R_grad together; F_total provides gradient signal even when R=1 |
+| HF Space disconnects mid-run | Medium | Medium (lost progress) | Auto-checkpoint every 100 steps to host RAM; periodic save to persistent storage |
+| JupyterLab kernel OOM (host RAM) | Low | Low | History ring buffer capped; only store top-K candidates, not all 4,096 |
+| XLA compilation time on first step | Certain | Low (one-time) | First `jit` call with 4,096 batch takes ~2-5 min to compile. Subsequent steps are instant. Budget for this. |
 
 ---
 
-## 11. Execution Order
+## 14. Execution Order
 
 ```
-CODESPACE (this repo)                          HF SPACE (A100)
-═══════════════════                            ═══════════════
+CODESPACE (this repo, CPU)                     HF SPACE (A100 Large, JupyterLab)
+═══════════════════════════                    ═════════════════════════════════
 F1a: numerics_jax.py ──┐
 F1b: curvature + maxwell_jax ──┤
 F1c: metrics_jax.py ──┤
@@ -463,10 +750,47 @@ F1d: free_energy_jax.py ──┤
 F2: biot_savart.py ────┤
 F3: forge_loss() ──────┤
 F4: optimization loop ─┘
-F4b: CPU validation run ──────────────────────> F5: A100 deployment + benchmark
-                                                F6: Production geometry generation
-                                                F7: Export + patent filing
+F4b: CPU validation run
+         │
+         └──── deploy ──────────────────────> F5a: Environment setup (JAX CUDA)
+                                              F5b: Forge_Dashboard.ipynb
+                                              F5c: VRAM limit testing
+                                              F5d: Parity tests on GPU
+                                              F5e: Benchmark (pts/sec, grads/sec)
+                                              F5f: Mixed-precision tuning
+                                                │
+                                              F6a: Epoch 1 — Seed 4,096 candidates
+                                              F6b: Tournament → 1,024 survivors
+                                              F6c: Epoch 2 — Filter at 48³
+                                              F6d: Tournament → 256 elite
+                                              F6e: Epoch 3 — Polish at 64³
+                                              F6f: Select top 10 + export
+                                                │
+                                              F7: NumPy cross-validation
+                                              F8: CAD export + IP filing
 ```
 
-Phases F1-F4 are fully achievable in this Codespace. Phase F5+ requires the
-A100 HF Space.
+Phases F1-F4b are fully achievable in this Codespace (~7-9 sessions).
+Phases F5-F8 require the A100 HF Space (~2-4 sessions at $2.50/hr).
+
+---
+
+## 15. Quick Reference: Key Numbers
+
+| Metric | Value |
+|--------|-------|
+| JAX core lines to port | ~750 |
+| Parity test tolerance | 1e-6 |
+| Fourier params per coil | 60 (10 harmonics × 3 coords × 2 sin/cos) |
+| Total optimization params (5 coils) | 300 |
+| CPU validation grid | 20³ = 8K points |
+| GPU coarse grid (Epoch 1) | 32³ = 32K points |
+| GPU medium grid (Epoch 2) | 48³ = 110K points |
+| GPU full grid (Epoch 3) | 64³ = 262K points |
+| Max vmap batch (with checkpoint) | 4,096 candidates |
+| Max vmap batch (without checkpoint) | ~2,000 candidates |
+| Tournament survival rate | 25% per epoch |
+| Full tournament cost | ~$6.25 (2.5 hrs × $2.50/hr) |
+| XLA first-compile time | ~2-5 min (one-time) |
+| Codespace sessions needed | 7-9 |
+| A100 sessions needed | 2-4 |
