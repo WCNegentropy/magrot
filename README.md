@@ -250,3 +250,17 @@ Key additions:
 - **Geometric Algebra:** Unify static/dynamic R via Faraday bivector F = E + IcB
 - **Fusion control:** Real-time R computation as feedback for Z-pinch experiments
 - **Topological extension:** Combine local R with magnetic winding metrics
+
+
+## ⚖️ Licensing and Copyright
+
+The MAGROT project utilizes a split-licensing model to encourage open scientific collaboration while protecting the commercial engineering implementations of the framework. All intellectual property is held by WCNEGENTROPY HOLDINGS LLC.
+
+Software & Simulators (Root, magrot/, simulations/, tests/): All source code, JAX-accelerated Forge optimizers, and simulation engines are licensed under the GNU Affero General Public License v3.0 (AGPLv3).
+
+Research & Documentation (docs/ and results/ directories): All framework specifications, validation reports, mathematical derivations, and generated visual results are licensed under the Creative Commons Attribution 4.0 International (CC BY 4.0) license. You are free to share, adapt, and commercially publish this theoretical and visual work, provided you give appropriate credit to WCNegentropy Holdings LLC and link to this repository.
+
+## 💼 Commercial Licensing: 
+
+> The AGPLv3 requires that any modified versions or network services (SaaS) running this code be open-sourced. If your organization wishes to integrate the MAGROT Forge optimizer or plasma confinement simulators into a proprietary, closed-source commercial backend, you must obtain a commercial license.
+Contact: contact@wcnegentropy.com for commercial licensing inquiries.
