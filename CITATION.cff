@@ -1,0 +1,13 @@
+cff-version: 1.2.0
+message: "If you use this software, simulation framework, or documentation, please cite it as below."
+authors:
+  - family-names: "Clark"
+    given-names: "Mikeal"
+    affiliation: "WCNEGENTROPY HOLDINGS LLC"
+title: "MAGROT: Magnetic Generalized Rotation Optimization Tool & Plasma Confinement Framework"
+version: 3.0.0
+date-released: 2026-03-22
+url: "https://github.com/WCNegentropy/MAGROT"
+repository-code: "https://github.com/WCNegentropy/MAGROT"
+license: "CC-BY-4.0 AND AGPL-3.0-or-later"
+abstract: "A computational framework and JAX-accelerated optimization engine for simulating magnetic field equilibria in plasma confinement contexts, utilizing the R=1 topological stress scalar as a differentiable Lyapunov loss function."
