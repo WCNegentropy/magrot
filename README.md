@@ -12,7 +12,7 @@ than raw magnitudes or current densities.
 | R > 1 | **Contracting** | Inward tension dominates; field collapses |
 
 **Author:** WCNEGENTROPY HOLDINGS LLC
-**License:** MIT
+**License:** AGPLv3 + CC BY 4.0
 **Version:** 0.2.0-dev
 **Status:** Active R&D -- v1 validated (Tier 1 & 2), v2 thermodynamic framework validated (1D + full 3D)
 
